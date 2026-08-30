@@ -1,0 +1,18 @@
+{
+  "profile": "RTL-L1",
+  "source": "SPEC v3.1 section 7, decided in canon/05-decisions/0001-d001-shared-trunk-and-l1-budget.md",
+  "total_ceiling_mb": 3280,
+  "assumed_usable_mb": 3400,
+  "note": "assumed_usable_mb is the pre-flight adapter_cap=3 threshold. Measured values arrive from t1-bench; nothing here is a bench result.",
+  "components": [
+    { "component": "Kernel + Tangri OS", "ceiling_mb": 500, "measured_mb": null },
+    { "component": "containerd + supervisor", "ceiling_mb": 350, "measured_mb": null },
+    { "component": "Privacy control set", "ceiling_mb": 550, "measured_mb": null },
+    { "component": "Cascade orchestrator + bridge agent", "ceiling_mb": 250, "measured_mb": null },
+    { "component": "Discovery + normalization", "ceiling_mb": 250, "measured_mb": null },
+    { "component": "Adapters x3", "ceiling_mb": 420, "measured_mb": null },
+    { "component": "Shared trunk (detector + age head) + ONNX Runtime", "ceiling_mb": 440, "measured_mb": null },
+    { "component": "Decode x2, keyframe-only, pinned buffers", "ceiling_mb": 360, "measured_mb": null },
+    { "component": "SQLite spool, page cache 32 MB, WAL bounded", "ceiling_mb": 160, "measured_mb": null }
+  ]
+}

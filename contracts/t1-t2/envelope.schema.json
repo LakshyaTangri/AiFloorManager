@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tangri.dev/contracts/t1-t2/envelope.schema.json",
+  "title": "T1 -> T2 egress envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "device_id",
+    "boot_id",
+    "seq",
+    "device_time",
+    "schema",
+    "data_class",
+    "purpose",
+    "trust_level",
+    "payload",
+    "policy_version"
+  ],
+  "properties": {
+    "device_id": { "type": "string", "maxLength": 64 },
+    "boot_id": { "type": "string", "maxLength": 64 },
+    "seq": { "type": "integer", "minimum": 0 },
+    "device_time": { "type": "string", "format": "date-time" },
+    "schema": { "type": "string", "pattern": "^rtl\\.[a-z_]+\\.v[0-9]+$" },
+    "data_class": { "enum": ["C0", "C1", "C2"] },
+    "purpose": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "trust_level": { "enum": ["software_bound", "module_attested", "hardware_attested"] },
+    "payload": { "type": "object" },
+    "lawful_basis": {
+      "type": ["string", "null"],
+      "enum": [
+        "notice.public_space",
+        "notice.workplace",
+        "consent.explicit",
+        "legitimate_use.security",
+        "legitimate_use.safety",
+        "contract.service",
+        null
+      ]
+    },
+    "basis_ref": { "type": ["string", "null"], "maxLength": 64 },
+    "retention_until": { "type": ["string", "null"], "format": "date-time" },
+    "policy_version": { "type": "string", "maxLength": 16 },
+    "age_gate_ver": { "type": ["string", "null"], "maxLength": 32 },
+    "k_value": { "type": ["integer", "null"], "minimum": 0 },
+    "metric": { "type": ["string", "null"], "maxLength": 64 },
+    "clock_offset_ms": { "type": "integer" },
+    "time_uncertain": { "type": "boolean" },
+    "backfill": { "type": "boolean" },
+    "entitlements": { "type": "array", "items": { "type": "string", "maxLength": 64 } }
+  },
+  "note": "data_class is capped at C2 in this contract. C3/C4/C5 travel on the L2/L3 contract only, and C6 has no schema anywhere."
+}

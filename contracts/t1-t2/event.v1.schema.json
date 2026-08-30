@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tangri.dev/contracts/t1-t2/event.v1.schema.json",
+  "title": "rtl.event.v1 payload (class C2)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_code"],
+  "properties": {
+    "event_code": { "type": "string", "pattern": "^[a-z0-9_]{1,64}$" },
+    "zone_id": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,64}$" },
+    "severity": { "enum": ["info", "warn", "critical"] }
+  },
+  "note": "Every value is a bounded token or an enum. There is no free-text field, so there is nothing for a narrative description to travel in."
+}
