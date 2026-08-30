@@ -63,7 +63,7 @@ def _is_free_text(value: object) -> bool:
     return isinstance(value, str) and ENUM_SHAPE.match(value) is None
 
 
-def _contains_media(payload: dict[str, Any]) -> bool:
+def contains_media(payload: dict[str, Any]) -> bool:
     for key, value in payload.items():
         if isinstance(value, bytes):
             return True
@@ -71,7 +71,7 @@ def _contains_media(payload: dict[str, Any]) -> bool:
             key.endswith(("_b64", "_image", "_clip", "_frame")) or value.startswith("data:")
         ):
             return True
-        if isinstance(value, dict) and _contains_media(value):
+        if isinstance(value, dict) and contains_media(value):
             return True
     return False
 
@@ -143,7 +143,7 @@ class EgressFilter:
 
         # Media is checked before free text: a data: URI is both, and "media_forbidden" is the
         # reason an operator needs to see on the dashboard.
-        if _contains_media(env.payload):
+        if contains_media(env.payload):
             return Verdict(False, "media_forbidden")
 
         for value in env.payload.values():

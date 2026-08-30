@@ -38,7 +38,14 @@ def default_bundle(version: int = 3) -> PolicyBundle:
             "rtl.trace.v1": DataClass.C3_TRACE.value,
         },
         field_allowlist={
-            "rtl.aggregate.v1": ("metric", "value", "window_start", "k_suppressed"),
+            "rtl.aggregate.v1": (
+                "metric",
+                "value",
+                "window_start",
+                "k_suppressed",
+                "window_seconds",
+                "coarsened",
+            ),
             "rtl.event.v1": ("event_code", "zone_id", "severity"),
             "rtl.health.v1": ("cpu_pct", "mem_mb", "minor_suppression_rate", "clock_offset_ms"),
             "rtl.trace.v1": ("trace_id", "zone_path"),
