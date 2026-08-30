@@ -12,6 +12,15 @@
       "description": "null when k_suppressed. A suppressed window is absent, never zero."
     },
     "window_start": { "type": "string", "format": "date-time" },
-    "k_suppressed": { "type": "boolean" }
+    "k_suppressed": { "type": "boolean" },
+    "window_seconds": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "Widens when a full spool coarsens windows rather than dropping them."
+    },
+    "coarsened": {
+      "type": "boolean",
+      "description": "True when this window is the merge of several finer windows."
+    }
   }
 }

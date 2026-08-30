@@ -7,7 +7,7 @@ they live in code rather than in the signed policy bundle.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import Enum, IntEnum
 from typing import Final
 
 
@@ -115,6 +115,21 @@ AGE_GATE_THRESHOLD: Final[int] = 22
 C3_RETENTION_DAYS: Final[dict[Profile, int]] = {Profile.L1: 0, Profile.L2: 30, Profile.L3: 90}
 
 SPOOL_DAYS: Final[dict[Profile, int]] = {Profile.L1: 7, Profile.L2: 30, Profile.L3: 90}
+
+
+class Priority(IntEnum):
+    """Spool overflow order (F14 R1). Lower ordinal survives longer."""
+
+    SAFETY_SECURITY = 0
+    REFRIGERATION = 1
+    OPERATIONAL = 2
+    AGGREGATE = 3
+    HEALTH = 4
+
+
+# F14 R2: reconnect window, widened per attempt and spread by a device_id-derived jitter.
+BACKOFF_MIN_S: Final[float] = 1.0
+BACKOFF_MAX_S: Final[float] = 900.0
 
 # D-005: full local session behaviour for 72 h of T2 outage, read-only thereafter.
 OFFLINE_FULL_SESSION_HOURS: Final[int] = 72
