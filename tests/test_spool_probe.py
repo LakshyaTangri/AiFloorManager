@@ -110,6 +110,18 @@ def test_aggregates_coarsen_before_anything_is_dropped(tmp_path: Path) -> None:
     assert sum(int(r.payload["value"]) for r in spool.drain(100)) == sum(range(1, 9))
 
 
+def test_health_is_shed_before_aggregate_resolution_is_spent(tmp_path: Path) -> None:
+    """Coarsening costs resolution, so it comes after the cheapest data has already gone."""
+    spool = make_spool(tmp_path, capacity_bytes=700)
+    for n in range(2):
+        spool.enqueue(aggregate(NOW + timedelta(minutes=5 * n), value=n + 1))
+    for n in range(4):
+        spool.enqueue(health(NOW + timedelta(seconds=n), n))
+
+    assert spool.dropped["dropped_health"] > 0
+    assert spool.coarsened_count == 0
+
+
 def test_a_lower_priority_record_yields_rather_than_evicting_its_betters(tmp_path: Path) -> None:
     spool = make_spool(tmp_path, capacity_bytes=300)
     spool.enqueue(excursion(NOW))

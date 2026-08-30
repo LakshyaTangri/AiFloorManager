@@ -50,6 +50,11 @@ class SpoolItem:
     metric: str | None = None
     window_seconds: int | None = None
     k_value: int | None = None
+    # Carried, not re-derived on drain: the basis that justified the record is the one it was
+    # captured under, and the policy may well have changed during the outage.
+    lawful_basis: str | None = None
+    basis_ref: str | None = None
+    retention_until: str | None = None
 
 
 @dataclass(frozen=True)
@@ -65,6 +70,9 @@ class SpooledRecord:
     metric: str | None
     window_seconds: int | None
     k_value: int | None
+    lawful_basis: str | None
+    basis_ref: str | None
+    retention_until: str | None
     coarsened: bool
 
     @property
@@ -129,6 +137,9 @@ class Spool:
                 metric TEXT,
                 window_seconds INTEGER,
                 k_value INTEGER,
+                lawful_basis TEXT,
+                basis_ref TEXT,
+                retention_until TEXT,
                 coarsened INTEGER NOT NULL DEFAULT 0,
                 size_bytes INTEGER NOT NULL
             )
@@ -161,7 +172,7 @@ class Spool:
 
         seq = self._next_seq()
         self._db.execute(
-            "INSERT INTO spool VALUES (?,?,?,?,?,?,?,?,?,?,?,0,?)",
+            "INSERT INTO spool VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)",
             (
                 seq,
                 self.boot_id,
@@ -174,6 +185,9 @@ class Spool:
                 item.metric,
                 item.window_seconds,
                 item.k_value,
+                item.lawful_basis,
+                item.basis_ref,
+                item.retention_until,
                 size,
             ),
         )
@@ -209,14 +223,31 @@ class Spool:
         self._db.commit()
         return int(cursor.rowcount)
 
+    def discard(self, seqs: Iterable[int], reason: str) -> int:
+        """Remove records that can never be delivered, counted under a named reason.
+
+        Distinct from `ack`: an acked record reached T2, a discarded one is being given up on.
+        """
+        removed = self.ack(seqs)
+        if removed:
+            self._count_drop(reason, removed)
+        return removed
+
     def _make_room(self, needed: int, incoming: Priority) -> None:
         while self.used_bytes + needed > self.capacity_bytes:
-            if self._coarsen_oldest_aggregate():
-                continue
             victim = self._db.execute(
                 "SELECT seq, priority, size_bytes FROM spool ORDER BY priority DESC, seq ASC "
                 "LIMIT 1"
             ).fetchone()
+            # Coarsening only outranks dropping when the drop would hit something at least as
+            # important as an aggregate. Health is cheaper than aggregate resolution, so it goes
+            # first and the windows stay fine-grained (F14 R1).
+            if (
+                victim is not None
+                and int(victim[1]) <= int(Priority.AGGREGATE)
+                and self._coarsen_oldest_aggregate()
+            ):
+                continue
             if victim is None or int(victim[1]) < int(incoming):
                 # Everything left outranks the incoming record: the new record yields instead.
                 raise SpoolRefused("spool_full")
@@ -284,7 +315,10 @@ class Spool:
             metric=None if row[8] is None else str(row[8]),
             window_seconds=None if row[9] is None else int(row[9]),
             k_value=None if row[10] is None else int(row[10]),
-            coarsened=bool(row[11]),
+            lawful_basis=None if row[11] is None else str(row[11]),
+            basis_ref=None if row[12] is None else str(row[12]),
+            retention_until=None if row[13] is None else str(row[13]),
+            coarsened=bool(row[14]),
         )
 
     def _count_drop(self, reason: str, n: int) -> None:

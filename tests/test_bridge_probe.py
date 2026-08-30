@@ -6,6 +6,7 @@ attack the paths rather than the configuration.
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -14,6 +15,7 @@ import pytest
 
 from t1.bridge import backoff
 from t1.bridge.mqtt import (
+    BACKFILL_MIN_INTERVAL_S,
     INGEST_ENDPOINT,
     MQTT_ENDPOINT,
     Bridge,
@@ -122,9 +124,13 @@ def test_the_bridge_exposes_no_inbound_surface(egress: EgressFilter) -> None:
         ("mqtt://iot.pulsemanager.ai:1883", "scheme_forbidden"),
         ("mqtts://iot.pulsemanager.ai:8883", "port_forbidden"),
         ("http://iot.pulsemanager.ai:443", "scheme_forbidden"),
+        # TLS on 443 to somebody else's collector is still exfiltration.
+        ("mqtts://collector.attacker.example:443", "host_not_allowed"),
     ],
 )
-def test_only_443_and_only_tls_schemes(egress: EgressFilter, endpoint: str, reason: str) -> None:
+def test_only_443_tls_and_only_tangri_hosts(
+    egress: EgressFilter, endpoint: str, reason: str
+) -> None:
     with pytest.raises(BridgeRefused) as exc:
         Bridge(
             device_id=DEVICE,
@@ -143,6 +149,15 @@ def test_publish_is_filtered_before_it_is_sent(egress: EgressFilter) -> None:
     good = bridge.publish(aggregate_envelope())
     assert good.verdict.accepted
     assert transport.calls[0][0] == MQTT_ENDPOINT
+
+    # The envelope travels, not just the payload: T2 cannot attribute a bare payload.
+    body = json.loads(transport.calls[0][2])
+    assert body["device_id"] == DEVICE
+    assert body["seq"] == 1
+    assert body["schema"] == "rtl.aggregate.v1"
+    assert body["policy_version"] == "3"
+    assert body["backfill"] is False
+    assert body["payload"]["metric"] == "footfall"
 
     hostile = bridge.publish(
         aggregate_envelope(
@@ -175,6 +190,29 @@ def test_an_unloadable_policy_takes_the_bridge_down(tmp_path: Path) -> None:
     assert transport.calls == []
 
 
+def test_a_transport_failure_stops_the_batch_and_keeps_the_rest_in_order(
+    egress: EgressFilter, tmp_path: Path
+) -> None:
+    """Skipping past a failure would deliver seq 3 before seq 2 arrives on the retry."""
+
+    class FlakyTransport(FakeTransport):
+        def send(self, endpoint: str, topic: str, body: bytes) -> None:
+            if len(self.calls) == 2:
+                raise ConnectionResetError("tls reset")
+            super().send(endpoint, topic, body)
+
+    spool = spool_with(
+        tmp_path, [aggregate_item(NOW - timedelta(minutes=10 - n), n) for n in range(5)]
+    )
+    bridge = make_bridge(egress, FlakyTransport())
+    with pytest.raises(ConnectionResetError):
+        bridge.backfill(spool, ClockStamp(0, False), now=NOW)
+
+    remaining = spool.drain(10)
+    assert [r.payload["value"] for r in remaining] == [2, 3, 4]
+    assert [r.seq for r in remaining] == sorted(r.seq for r in remaining)
+
+
 def test_backfill_preserves_order_and_original_timestamps(
     egress: EgressFilter, tmp_path: Path
 ) -> None:
@@ -194,8 +232,10 @@ def test_backfill_preserves_order_and_original_timestamps(
     assert spool.depth() == 0
 
 
-def test_rejected_backfill_stays_in_the_spool(egress: EgressFilter, tmp_path: Path) -> None:
-    """An accepted record is acked; a refused one is kept, not silently discarded."""
+def test_a_refused_record_is_discarded_rather_than_blocking_the_queue(
+    egress: EgressFilter, tmp_path: Path
+) -> None:
+    """No retry changes a filter verdict, so a poison record leaves under a named reason."""
     bad = aggregate_item(NOW - timedelta(days=1), 1)
     spool = spool_with(tmp_path, [bad])
     spool.enqueue(
@@ -213,14 +253,49 @@ def test_rejected_backfill_stays_in_the_spool(egress: EgressFilter, tmp_path: Pa
     results = bridge.backfill(spool, ClockStamp(0, False))
 
     assert [r.verdict.reason for r in results] == [None, "schema_unknown"]
-    assert [r.schema for r in spool.drain(10)] == ["rtl.unknown.v1"]
+    assert spool.depth() == 0
+    assert spool.dropped["backfill_refused"] == 1
 
 
-def test_backfill_is_rate_limited_per_batch(egress: EgressFilter, tmp_path: Path) -> None:
+def test_backfill_is_rate_limited_by_batch_and_by_clock(
+    egress: EgressFilter, tmp_path: Path
+) -> None:
     spool = spool_with(tmp_path, [aggregate_item(NOW - timedelta(minutes=n), n) for n in range(10)])
     bridge = make_bridge(egress, FakeTransport())
-    assert len(bridge.backfill(spool, ClockStamp(0, False), limit=4)) == 4
+    assert len(bridge.backfill(spool, ClockStamp(0, False), limit=4, now=NOW)) == 4
     assert spool.depth() == 6
+
+    with pytest.raises(BridgeRefused) as exc:
+        bridge.backfill(spool, ClockStamp(0, False), limit=4, now=NOW + timedelta(seconds=1))
+    assert exc.value.reason == "backfill_rate_limited"
+    assert spool.depth() == 6
+
+    later = NOW + timedelta(seconds=BACKFILL_MIN_INTERVAL_S)
+    assert len(bridge.backfill(spool, ClockStamp(0, False), limit=4, now=later)) == 4
+
+
+def test_a_spooled_event_keeps_the_basis_it_was_captured_under(
+    egress: EgressFilter, tmp_path: Path
+) -> None:
+    """C2 needs a lawful basis and a retention date; neither is re-derivable after the outage."""
+    event = SpoolItem(
+        schema="rtl.event.v1",
+        data_class=DataClass.C2_EVENT,
+        priority=Priority.SAFETY_SECURITY,
+        device_time=NOW - timedelta(days=3),
+        payload={"event_code": "door_forced", "zone_id": "z1", "severity": "high"},
+        purpose="security",
+        lawful_basis="legitimate_use.security",
+        basis_ref="dpia-2026-004",
+        retention_until=(NOW + timedelta(days=30)).isoformat(),
+    )
+    spool = spool_with(tmp_path, [event])
+    bridge = make_bridge(egress, FakeTransport())
+
+    result = bridge.backfill(spool, ClockStamp(0, False), now=NOW)[0]
+    assert result.verdict.accepted, result.verdict.reason
+    assert result.envelope.lawful_basis == "legitimate_use.security"
+    assert result.envelope.basis_ref == "dpia-2026-004"
 
 
 def test_backoff_window_doubles_and_caps() -> None:
