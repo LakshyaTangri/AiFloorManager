@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tangri.dev/contracts/t1-t2/health.v1.schema.json",
+  "title": "rtl.health.v1 payload (class C0)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cpu_pct", "mem_mb"],
+  "properties": {
+    "cpu_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+    "mem_mb": { "type": "number", "minimum": 0 },
+    "minor_suppression_rate": {
+      "type": "number", "minimum": 0, "maximum": 1,
+      "description": "C0 site health ratio (D-008 s2). A rate, never a count tied to a person or a time small enough to identify one."
+    },
+    "clock_offset_ms": { "type": "integer" }
+  }
+}

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+      - name: Format
+        run: ruff format --check .
+      - name: Types
+        run: mypy
+
+      # The control gates run as their own steps rather than only inside pytest, so a failure names
+      # the control that broke rather than "the test suite is red".
+      - name: sealed-probe (D-006 boundary)
+        run: sealed-probe
+      - name: egress-fuzz (hostile payloads)
+        run: egress-fuzz
+      - name: budget-report (declared ceilings)
+        run: budget-report --budgets ops/budgets.json
+      - name: t1-sim (end-to-end on host)
+        run: t1-sim --json
+
+      - name: Tests
+        run: pytest
+
+      - name: Bench matrix (reported unproven, never simulated)
+        run: t1-bench --list

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tangri.dev/contracts/t1-t2/aggregate.v1.schema.json",
+  "title": "rtl.aggregate.v1 payload (class C1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["metric", "window_start", "k_suppressed"],
+  "properties": {
+    "metric": { "type": "string", "maxLength": 64 },
+    "value": {
+      "type": ["integer", "null"],
+      "description": "null when k_suppressed. A suppressed window is absent, never zero."
+    },
+    "window_start": { "type": "string", "format": "date-time" },
+    "k_suppressed": { "type": "boolean" }
+  }
+}
