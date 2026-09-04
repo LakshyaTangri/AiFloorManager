@@ -26,6 +26,7 @@ from t1.control.commissioning import (
 NOW = datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc)
 T2_KEY = b"dev-only-t2-exception-key"
 PHOTO = "job-4411/signage-front-door.jpg"
+FE = "fe-207"
 
 
 def gate(chain: AuditChain) -> CommissioningGate:
@@ -36,7 +37,7 @@ def complete(g: CommissioningGate, *, skip: GateItem | None = None) -> Commissio
     for item in GATE_ORDER:
         if item is skip:
             continue
-        g.record_pass(item, NOW, photo_ref=PHOTO if item is GateItem.NOTICE else None)
+        g.record_pass(item, NOW, actor=FE, photo_ref=PHOTO if item is GateItem.NOTICE else None)
     return g
 
 
@@ -63,7 +64,7 @@ def test_every_missing_item_refuses_activation_by_name(
 def test_signage_needs_a_photograph_not_a_tick(chain: AuditChain) -> None:
     g = gate(chain)
     with pytest.raises(ActivationRefused) as exc:
-        g.record_pass(GateItem.NOTICE, NOW)
+        g.record_pass(GateItem.NOTICE, NOW, actor=FE)
     assert exc.value.reason == "notice_missing"
     assert GateItem.NOTICE not in g.passed
 
@@ -85,6 +86,21 @@ def test_a_full_gate_activates_offline_and_lands_in_the_chain(chain: AuditChain)
     completion = [r for r in chain.records() if r.kind == "commissioning_complete"]
     assert len(completion) == 1
     assert completion[0].body["notice_photo_ref"] == PHOTO
+    assert completion[0].body["actors"][GateItem.AGE_GATE.value] == FE
+
+
+def test_gate_state_cannot_be_written_from_outside(chain: AuditChain) -> None:
+    """The cheapest bypass is an assignment, so the fields are views rather than attributes."""
+    g = complete(gate(chain), skip=GateItem.AGE_GATE)
+    with pytest.raises(AttributeError):
+        g.state = DeviceState.ACTIVE  # type: ignore[misc]
+    with pytest.raises(AttributeError):
+        g.passed = frozenset(GATE_ORDER)  # type: ignore[misc]
+    with pytest.raises(TypeError):
+        g.exceptions[GateItem.AGE_GATE] = Exception2P(  # type: ignore[index]
+            GateItem.AGE_GATE, ("a", "b"), NOW + timedelta(days=1)
+        )
+    assert not g.processing_allowed
 
 
 def test_a_field_waiver_has_no_accepting_path_and_is_audited(chain: AuditChain) -> None:

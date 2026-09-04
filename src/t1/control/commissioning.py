@@ -15,9 +15,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from types import MappingProxyType
 
 from t1.control.audit_chain import AuditChain
 
@@ -116,33 +118,65 @@ def sign_exception(exc: Exception2P, key: bytes) -> str:
     return hmac.new(key, exc.to_bytes(), hashlib.sha256).hexdigest()
 
 
-@dataclass
 class CommissioningGate:
-    device_id: str
-    chain: AuditChain
-    t2_key: bytes
-    passed: set[GateItem] = field(default_factory=set)
-    notice_photo_ref: str | None = None
-    exceptions: dict[GateItem, Exception2P] = field(default_factory=dict)
-    state: DeviceState = DeviceState.COMMISSIONING
+    """Gate state is private on purpose.
+
+    `passed`, `exceptions` and `state` are read-only views. If they were plain attributes, the
+    shortest path past the whole gate would be `gate.state = ACTIVE` - one line, no signature, no
+    audit record - and every check above would be decoration.
+    """
+
+    def __init__(self, device_id: str, chain: AuditChain, t2_key: bytes) -> None:
+        self.device_id = device_id
+        self.chain = chain
+        self._t2_key = t2_key
+        self._passed: dict[GateItem, str] = {}
+        self._exceptions: dict[GateItem, Exception2P] = {}
+        self._state = DeviceState.COMMISSIONING
+        self._notice_photo_ref: str | None = None
+
+    @property
+    def state(self) -> DeviceState:
+        return self._state
+
+    @property
+    def passed(self) -> frozenset[GateItem]:
+        return frozenset(self._passed)
+
+    @property
+    def exceptions(self) -> Mapping[GateItem, Exception2P]:
+        return MappingProxyType(self._exceptions)
+
+    @property
+    def notice_photo_ref(self) -> str | None:
+        return self._notice_photo_ref
 
     @property
     def processing_allowed(self) -> bool:
         """No stream is processed while the gate is open, whatever else is configured."""
-        return self.state is DeviceState.ACTIVE
+        return self._state is DeviceState.ACTIVE
 
-    def record_pass(self, item: GateItem, now: datetime, photo_ref: str | None = None) -> None:
+    def record_pass(
+        self,
+        item: GateItem,
+        now: datetime,
+        actor: str,
+        photo_ref: str | None = None,
+    ) -> None:
+        """`actor` is attribution, not authorisation: every item names who claimed it."""
+        if not actor:
+            raise ActivationRefused("actor_missing", item, "Record who performed the check")
         if item is GateItem.NOTICE:
             # Signage evidence is a photograph, not a checkbox (SPEC §18).
             if not photo_ref:
                 raise ActivationRefused(
                     REFUSAL[item], item, "Attach the signage photograph, not a tick"
                 )
-            self.notice_photo_ref = photo_ref
-        self.passed.add(item)
+            self._notice_photo_ref = photo_ref
+        self._passed[item] = actor
         self.chain.append(
             "commissioning_item",
-            {"item": item.value, "photo_ref": photo_ref},
+            {"item": item.value, "actor": actor, "photo_ref": photo_ref},
             now.isoformat(),
         )
 
@@ -159,7 +193,7 @@ class CommissioningGate:
                 now.isoformat(),
             )
             raise ActivationRefused(reason, exc.item, REMEDY[exc.item])
-        self.exceptions[exc.item] = exc
+        self._exceptions[exc.item] = exc
         self.chain.append(
             "exception_applied",
             {
@@ -194,25 +228,26 @@ class CommissioningGate:
             {
                 "device_id": self.device_id,
                 "items": [item.value for item in GATE_ORDER],
-                "notice_photo_ref": self.notice_photo_ref,
-                "exceptions": sorted(item.value for item in self.exceptions),
+                "notice_photo_ref": self._notice_photo_ref,
+                "actors": {item.value: actor for item, actor in sorted(self._passed.items())},
+                "exceptions": sorted(item.value for item in self._exceptions),
             },
             now.isoformat(),
         )
-        self.state = DeviceState.ACTIVE
+        self._state = DeviceState.ACTIVE
         # The upload is queued, not awaited: the gate runs end to end offline (F21 R5).
         return record.hash
 
     def _satisfied(self, item: GateItem, now: datetime) -> bool:
-        if item in self.passed:
+        if item in self._passed:
             return True
-        exc = self.exceptions.get(item)
+        exc = self._exceptions.get(item)
         return exc is not None and now < exc.not_after
 
     def _exception_reason(self, exc: Exception2P, signature: str, now: datetime) -> str | None:
         if exc.signing_domain != EXCEPTION_SIGNING_DOMAIN:
             return "wrong_signing_domain"
-        if not hmac.compare_digest(sign_exception(exc, self.t2_key), signature):
+        if not hmac.compare_digest(sign_exception(exc, self._t2_key), signature):
             return "exception_invalid"
         if len({a for a in exc.approvers if a}) < 2:
             return "two_person_control_required"
