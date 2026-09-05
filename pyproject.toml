@@ -19,6 +19,7 @@ budget-report = "t1.tools.budget_report:main"
 chain-verify = "t1.tools.chain_verify:main"
 egress-fuzz = "t1.tools.egress_fuzz:main"
 sealed-probe = "t1.tools.sealed_probe:main"
+t1-preflight = "t1.tools.preflight:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -137,6 +137,12 @@ OFFLINE_FULL_SESSION_HOURS: Final[int] = 72
 # D-001 measured pre-flight thresholds, in MB of usable RAM.
 ADAPTER_CAP_THRESHOLDS: Final[tuple[tuple[int, int], ...]] = ((3481, 3), (3338, 2))
 
+# F01 R4: pre-flight must finish while the FE is still at the counter.
+PREFLIGHT_BUDGET_S: Final[int] = 300
+
+# F01 R5: an installed OS booted inside this window means the host is not dedicated.
+HOST_DEDICATION_WINDOW_DAYS: Final[int] = 7
+
 MAX_PAYLOAD_BYTES: Final[int] = 64 * 1024
 
 # F14 R6: beyond this offset the affected windows are marked time_uncertain.

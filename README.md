@@ -9,7 +9,8 @@ make the above sentence enforceable rather than aspirational.
 ```
 canon/            data classes, controls, and the decision register (ADRs)
 contracts/t1-t2/  published schemas; closed, and checked against the runtime allowlist in CI
-tiers/t1/         SPEC v3.1, FEATURES v1.1, LIFECYCLE v1.1
+tiers/t1/         SPEC v3.1, FEATURES v1.1, LIFECYCLE v1.1, ARCHITECTURE, TRACEABILITY, PLAN
+src/t1/platform/  M01: pre-flight host and site qualification
 src/t1/sealed/    the sealed pipeline process and its structural guards
 src/t1/control/   audit chain, egress filter, k-anonymity, zones, capability, sessions, retention
 src/t1/sim/       host-side simulation harness
@@ -31,6 +32,7 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/t1-sim              # full path end to end on this machine
 .venv/bin/budget-report --budgets ops/budgets.json
 .venv/bin/chain-verify path/to/chain.jsonl
+.venv/bin/t1-preflight --json    # qualifies this host; refuses with named remedies
 .venv/bin/pytest && .venv/bin/ruff check . && .venv/bin/mypy
 ```
 
@@ -42,6 +44,13 @@ behaviour. They are reported as **unproven**, never as passes. A host-side green
 evidence and must not be quoted as one; `ops/budgets.json` is a declaration, not a measurement.
 
 Field verification (F01, F02, F06, F09, F17–F21) is a separate gate again.
+
+## Where the implementation stands
+
+`tiers/t1/ARCHITECTURE.md` carries the approved D8/D9 module boundaries alongside the code,
+`tiers/t1/TRACEABILITY.md` maps every module to its source and tests with a status, and
+`tiers/t1/PLAN.md` holds the gap analysis, the phase plan and the open architecture-decision
+requests. Read PLAN.md before starting a module: several phases are blocked on answers, not effort.
 
 ## Design notes worth reading first
 
