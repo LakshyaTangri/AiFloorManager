@@ -1,1 +1,1 @@
-"""M01 — hardware and portable-media platform. Pre-flight qualification (F01)."""
+"""S01 platform. M01 pre-flight qualification (F01); M02/M03 boot slots and storage layout (F03)."""
