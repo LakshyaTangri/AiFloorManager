@@ -24,7 +24,8 @@ per `/tiers/t1/LIFECYCLE.md`, bench and field gates are separate and none of the
 | S01 | M02 | Measured boot and Secure Boot chain: shim, GRUB2, signed kernel and initramfs (F03 R1–R2) | — | — | MISSING |
 | S01 | M03 | Storage layout and its invariants: AD-01, read-only roots, LUKS2, append-only audit, no disk swap | `src/t1/platform/layout.py` | `tests/test_boot.py` | EXISTING (model only; no imaging) |
 | S01 | M03 | T1 OS image build (Yocto), image signing and release | — | — | MISSING |
-| S01 | M04 | Container runtime, sealed-process supervision | `src/t1/sealed/guard.py` (environment assertions only) | `tests/test_sealed_probe.py` | INCOMPLETE |
+| S01 | M04 | Unit supervision: four D-010 units, start order, per-unit artifact signature, scope allow-list, health | `src/t1/platform/supervisor.py`, `src/t1/sealed/guard.py` | `tests/test_supervisor.py`, `tests/test_sealed_probe.py` | EXISTING (policy only; no runtime enforcement) |
+| S01 | M04 | Container runtime itself: namespaces, capabilities, seccomp, cgroups | — | — | MISSING |
 | S02 | M05 | Camera assessment (F02), discovery and adapters (F06) | — | — | MISSING |
 | S02 | M06 | Network reachability, offline detection | `src/t1/bridge/backoff.py` (reconnect only) | `tests/test_bridge_probe.py` | INCOMPLETE |
 | S03 | M07 | Decode and cascade orchestration (F07) | `src/t1/sim/harness.py` (simulated frames only) | `tests/test_retention_and_sim.py` | MISSING |
