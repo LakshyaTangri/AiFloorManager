@@ -43,17 +43,22 @@ target hardware.
 Each item is a question, not a proposal to act on. Blocking items stop a phase; non-blocking items
 have a recorded working assumption that can be reversed cheaply.
 
+Three entries in the first version of this register were not open questions at all: SPEC §3.1 gives
+the storage layout and the media part, §4 gives the L1 anti-clone enrolment, and §5 gives the boot
+chain and disk-unlock model. They are recorded below as answered by SPEC, with only the residue
+still open. Reading SPEC.md before writing the register would have caught this.
+
 | ID | Question | Working assumption | Impact | Blocks |
 |---|---|---|---|---|
 | ADR-REQ-001 | Which modules own F21 and F22, and is D8/D9's feature list updated to F01–F22? | F21 → M13, F22 → M17 | Ownership and review routing | Non-blocking |
 | ADR-REQ-002 | Is the Python control set the production implementation, or the reference for a native runtime? | Production for control-plane logic; native only where measured to be necessary | Every module from M03 onward; team shape; CI | **Blocks phase 1 (M03/M04) and phase 3 (M08)** |
-| ADR-REQ-003 | What is the on-device storage layout — partitions, sizes, mount points, which survive A/B rollback, what is encrypted, what is crypto-erasable? | Separate audit partition already implied by the policy floor path | M02, M03, M10, F16 | **Blocks phase 1 and phase 4** |
-| ADR-REQ-004 | How is L1 identity rooted and anti-clone enforced on a portable SSD with no TPM, given a bit-for-bit copy is trivial? | None — this cannot be guessed | F04, F05 trust level, entitlement | **Blocks phase 5 (M15)** |
+| ADR-REQ-003 | ~~What is the on-device storage layout?~~ **Answered by SPEC §3.1 and §5**: rootfs-A / rootfs-B / LUKS2 data / 8 GB append-only audit / spool; audit survives rootfs rollback; zram 512 MB and no swap on the boot SSD. Open residue: partition sizes and what is crypto-erasable per data class | Implement the SPEC layout as given | M02, M03, M10, F16 | Non-blocking; sizes needed before phase 4 closes |
+| ADR-REQ-004 | ~~How is L1 identity rooted with no TPM?~~ **Answered by SPEC §4**: identity derives from SSD controller serial + host DMI fingerprint, one certificate, T2 refuses a second enrolment for the disk, fingerprint change → `RE_ENROLMENT_PENDING` with human approval. Open residue: custody of the pre-flight/profile signing key, and how the enrolment key wrapping the LUKS key is protected on a stolen disk (SPEC concedes it is attackable) | Implement SPEC §4 as given | F04, F05 trust level, entitlement | Non-blocking; key custody needed before phase 5 closes |
 | ADR-REQ-005 | Is a virtualised host a refusal or an advisory at pre-flight? | Advisory, reported | F01 outcome on VMs | Non-blocking |
 | ADR-REQ-006 | By what method may pre-flight obtain the internal disk's last-boot evidence without violating AD-01? A read-only mount is still a mount. | Unmeasured is a refusal (`host_dedication_unverified`) | F01 R5 certification | **Blocks F01 bench sign-off** |
 | ADR-REQ-007 | What is the container decomposition, and which units are separately signed and released? | Sealed process, egress filter and bridge are separate units | M04, M08, M12, M14 | **Blocks phase 1 (M04)** |
 | ADR-REQ-008 | Is the D8 GUI navigation the same set as the F22 local control surfaces, or a subset? | Subset of F22 | M17 scope | Non-blocking until phase 10 |
-| ADR-REQ-009 | Is 128 GB the contractual minimum portable-media capacity, and what endurance/thermal class qualifies? | 128 GB minimum, class unqualified | M01 bench matrix, BOM | **Blocks M01 media qualification** |
+| ADR-REQ-009 | ~~Is 128 GB the minimum media capacity?~~ **Answered by SPEC §3.1**: Tangri supplies a 256 GB SATA SSD in a USB 3.0 UASP enclosure, so `MIN_T1_MEDIA_MB` is that part's usable capacity. Open residue: the endurance and thermal class that qualifies the part | 256 GB part; class unqualified | M01 bench matrix, BOM | **Blocks M01 media qualification** |
 
 ## 4. Phase plan
 
@@ -65,12 +70,12 @@ strength of host-side evidence where the feature touches hardware.
 |---|---|---|---|---|
 | 0 | — | Architecture carried in-repo; traceability; this plan; ADR-REQ register | — | **Done in this change** for the analysis; ADR-REQs answered is a separate close |
 | 1a | M01 | Pre-flight host and site qualification, signed profile, named remedies, CLI | Phase 0 | **Host-side done in this change.** Media endurance/thermal/power-loss matrix and the dedication probe remain (ADR-REQ-006, 009) |
-| 1b | M02, M03 | Portable-media image, UEFI/Secure Boot chain, A/B slots, read-only rootfs, storage domains | ADR-REQ-002, 003 | Device boots on two qualified hosts from the portable SSD; internal disk provably untouched; rollback exercised on bench |
+| 1b | M02, M03 | Portable-media image, UEFI/Secure Boot chain, A/B slots, read-only rootfs, storage domains per SPEC §3.1/§5 | ADR-REQ-002 | Device boots on two qualified hosts from the portable SSD; internal disk provably untouched; rollback exercised on bench |
 | 1c | M04 | Container runtime, sealed-process supervision enforcing `SealedEnvironment`, capability enforcement at launch | 1b, ADR-REQ-007 | Sealed process refuses to start unsealed; `sealed-probe` runs against the real supervisor, not only the type system |
 | 2 | M06, M05 | Reachability, adapters, discovery, read-only credentials, camera assessment (F02, F06) | 1c | Real cameras enumerated and scored on bench; credentials proven read-only |
 | 3 | M07, M08, M09 | Decode and cascade, model bundle behind the sealed trunk, tracking, aggregation, Edge Manager | 2, ADR-REQ-002 | End-to-end counts on real streams; age gate and redaction measured, not simulated; k floors enforced from canon |
-| 4 | M10 | Storage domains, retention enforcement on durable storage, crypto-erase | 1b, ADR-REQ-003 | Crypto-erase demonstrated irreversible; retention runs independent of the writer |
-| 5 | M15 | Identity and enrolment, anti-clone, kill switch; existing filter/policy/audit integrated into the runtime | 4, ADR-REQ-004 | A cloned device is refused; kill switch stops ingest within its budget; audit chain covers every control decision |
+| 4 | M10 | Storage domains, retention enforcement on durable storage, crypto-erase | 1b, ADR-REQ-003 residue | Crypto-erase demonstrated irreversible; retention runs independent of the writer |
+| 5 | M15 | Identity and enrolment per SPEC §4, anti-clone, kill switch; existing filter/policy/audit integrated into the runtime | 4, ADR-REQ-004 residue | A cloned device is refused; kill switch stops ingest within its budget; audit chain covers every control decision |
 | 6 | M11 | P2P sessions with no store access | 5 | Session refusals proven adversarially |
 | 7 | M12, M13 | MQTT 5 / TLS 1.3 transport behind the existing bridge, spool drain, desired/reported state, commissioning gate wired to activation | 5 | 72 h offline then ordered backfill against a real broker; activation impossible with an open gate |
 | 8 | M14 | OTA bundles, signature verification, slot switch, rollback | 1b, 7 | Failed update rolls back automatically; policy floor survives rollback |

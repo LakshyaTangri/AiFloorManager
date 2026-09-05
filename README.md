@@ -32,7 +32,7 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/t1-sim              # full path end to end on this machine
 .venv/bin/budget-report --budgets ops/budgets.json
 .venv/bin/chain-verify path/to/chain.jsonl
-.venv/bin/t1-preflight --json    # qualifies this host; refuses with named remedies
+.venv/bin/t1-preflight --json --t1-media-mb 256000   # refuses this host, with named remedies
 .venv/bin/pytest && .venv/bin/ruff check . && .venv/bin/mypy
 ```
 

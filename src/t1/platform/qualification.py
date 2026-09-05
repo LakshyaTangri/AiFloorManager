@@ -24,10 +24,18 @@ from typing import Any, Final
 
 from t1.canon import HOST_DEDICATION_WINDOW_DAYS, PREFLIGHT_BUDGET_S, Profile, TrustLevel
 from t1.control.capability import CapabilityVector, l1_vector
-from t1.platform.probe import BootMode, HostObservation, SiteObservation
+from t1.platform.probe import (
+    USB3_MIN_SPEED_MBPS,
+    BootMode,
+    HostObservation,
+    SiteObservation,
+    SleepPolicy,
+)
 
-MIN_CORES: Final[int] = 2
-MIN_T1_MEDIA_MB: Final[int] = 120_000
+# SPEC §3.1: the client supplies a dedicated x86-64 PC with AVX2, ≥4 cores and 4 GB RAM, and
+# Tangri supplies a 256 GB SSD in a USB 3.0 UASP enclosure.
+MIN_CORES: Final[int] = 4
+MIN_T1_MEDIA_MB: Final[int] = 240_000
 SUPPORTED_ARCH: Final[frozenset[str]] = frozenset({"x86_64", "amd64", "AMD64"})
 
 PREFLIGHT_SIGNING_DOMAIN: Final[str] = "host-profile"
@@ -47,9 +55,13 @@ class Finding(str, Enum):
     RAM_INSUFFICIENT = "ram_insufficient"
     NIC_MISSING = "nic_missing"
     USB3_MISSING = "usb3_missing"
+    T1_MEDIA_LINK_DEGRADED = "t1_media_link_degraded"
+    T1_MEDIA_LINK_UNVERIFIED = "t1_media_link_unverified"
     T1_MEDIA_TOO_SMALL = "t1_media_too_small"
     BOOT_MODE_LEGACY = "boot_mode_legacy"
+    VIRTUALISATION_DISABLED = "virtualisation_disabled"
     SLEEP_ENABLED = "sleep_enabled"
+    SLEEP_POLICY_UNVERIFIED = "sleep_policy_unverified"
     HOST_NOT_DEDICATED = "host_not_dedicated"
     HOST_DEDICATION_UNVERIFIED = "host_dedication_unverified"
     PREFLIGHT_TIMEOUT = "preflight_timeout"
@@ -59,6 +71,7 @@ class Finding(str, Enum):
     SITE_POWER_UNSTABLE = "site_power_unstable"
     SITE_NETWORK_UNREACHABLE = "site_network_unreachable"
     SITE_CAMERA_UNREACHABLE = "site_camera_unreachable"
+    SITE_CAMERAS_UNVERIFIED = "site_cameras_unverified"
     SITE_MOUNTING_UNSUITABLE = "site_mounting_unsuitable"
 
 
@@ -68,10 +81,20 @@ REMEDIES: Final[dict[Finding, str]] = {
     Finding.CORES_INSUFFICIENT: f"use a PC with at least {MIN_CORES} CPU cores",
     Finding.RAM_INSUFFICIENT: "add RAM: T1 needs 3.26 GB usable after the customer's own load",
     Finding.NIC_MISSING: "connect the PC to the site LAN; no network interface was found",
-    Finding.USB3_MISSING: "move the T1 device to a USB 3.0 port (blue connector)",
-    Finding.T1_MEDIA_TOO_SMALL: "replace the T1 device: 128 GB is the minimum qualified capacity",
+    Finding.USB3_MISSING: "use a PC with a USB 3.0 port (blue connector)",
+    Finding.T1_MEDIA_LINK_DEGRADED: (
+        "move the T1 device to a USB 3.0 port: it negotiated a USB 2.0 link"
+    ),
+    Finding.T1_MEDIA_LINK_UNVERIFIED: (
+        "re-run pre-flight from the T1 device so its own USB link speed can be measured"
+    ),
+    Finding.T1_MEDIA_TOO_SMALL: "replace the T1 device: 256 GB is the supplied qualified capacity",
     Finding.BOOT_MODE_LEGACY: "enable UEFI boot in BIOS > Boot > Boot Mode and disable CSM",
+    Finding.VIRTUALISATION_DISABLED: "enable virtualization (VT-x / AMD-V) in BIOS > Advanced",
     Finding.SLEEP_ENABLED: "disable sleep and hibernate in BIOS > Power",
+    Finding.SLEEP_POLICY_UNVERIFIED: (
+        "confirm sleep and hibernate are disabled in BIOS > Power, then record it on the checklist"
+    ),
     Finding.HOST_NOT_DEDICATED: (
         "this PC is in daily use; T1 needs a dedicated host with no other operating system in use"
     ),
@@ -85,6 +108,9 @@ REMEDIES: Final[dict[Finding, str]] = {
     Finding.SITE_POWER_UNSTABLE: "provide a switched, protected mains outlet at the mounting point",
     Finding.SITE_NETWORK_UNREACHABLE: "provide a working LAN drop or uplink at the mounting point",
     Finding.SITE_CAMERA_UNREACHABLE: "check camera power, cabling and VLAN for the named streams",
+    Finding.SITE_CAMERAS_UNVERIFIED: (
+        "survey the site's cameras: qualification needs the expected stream list, not an empty one"
+    ),
     Finding.SITE_MOUNTING_UNSUITABLE: "provide a ventilated, secured mounting position",
 }
 
@@ -206,14 +232,22 @@ def _host_findings(obs: HostObservation, elapsed_s: float) -> list[Finding]:
         findings.append(Finding.CORES_INSUFFICIENT)
     if not obs.nic_present:
         findings.append(Finding.NIC_MISSING)
-    if not obs.usb3_present:
+    if not obs.usb3_port_present:
         findings.append(Finding.USB3_MISSING)
+    if obs.t1_media_link_mbps is None:
+        findings.append(Finding.T1_MEDIA_LINK_UNVERIFIED)
+    elif obs.t1_media_link_mbps < USB3_MIN_SPEED_MBPS:
+        findings.append(Finding.T1_MEDIA_LINK_DEGRADED)
     if obs.t1_media_mb < MIN_T1_MEDIA_MB:
         findings.append(Finding.T1_MEDIA_TOO_SMALL)
     if obs.boot_mode is not BootMode.UEFI:
         findings.append(Finding.BOOT_MODE_LEGACY)
-    if obs.sleep_enabled:
+    if not obs.virtualisation_enabled:
+        findings.append(Finding.VIRTUALISATION_DISABLED)
+    if obs.sleep_policy is SleepPolicy.ENABLED:
         findings.append(Finding.SLEEP_ENABLED)
+    elif obs.sleep_policy is SleepPolicy.UNVERIFIED:
+        findings.append(Finding.SLEEP_POLICY_UNVERIFIED)
     if obs.internal_os_last_boot_days is None:
         findings.append(Finding.HOST_DEDICATION_UNVERIFIED)
     elif obs.internal_os_last_boot_days < HOST_DEDICATION_WINDOW_DAYS:
@@ -263,7 +297,9 @@ def qualify_site(obs: SiteObservation, *, profile: Profile, elapsed_s: float = 0
         findings.append(Finding.SITE_POWER_UNSTABLE)
     if not obs.network_reachable:
         findings.append(Finding.SITE_NETWORK_UNREACHABLE)
-    if obs.cameras_unreachable:
+    if not obs.cameras_expected:
+        findings.append(Finding.SITE_CAMERAS_UNVERIFIED)
+    elif obs.cameras_unreachable:
         findings.append(Finding.SITE_CAMERA_UNREACHABLE)
     if not obs.mounting_suitable:
         findings.append(Finding.SITE_MOUNTING_UNSUITABLE)
