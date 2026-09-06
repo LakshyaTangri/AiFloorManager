@@ -26,8 +26,12 @@ per `/tiers/t1/LIFECYCLE.md`, bench and field gates are separate and none of the
 | S01 | M03 | T1 OS image build (Yocto), image signing and release | — | — | MISSING |
 | S01 | M04 | Unit supervision: four D-010 units, start order, per-unit artifact signature, scope allow-list, health | `src/t1/platform/supervisor.py`, `src/t1/sealed/guard.py` | `tests/test_supervisor.py`, `tests/test_sealed_probe.py` | EXISTING (policy only; no runtime enforcement) |
 | S01 | M04 | Container runtime itself: namespaces, capabilities, seccomp, cgroups | — | — | MISSING |
-| S02 | M05 | Camera assessment (F02), discovery and adapters (F06) | — | — | MISSING |
-| S02 | M06 | Network reachability, offline detection | `src/t1/bridge/backoff.py` (reconnect only) | `tests/test_bridge_probe.py` | INCOMPLETE |
+| S02 | M05 | Camera assessment scoring, closed issue set, accuracy commitment (F02) | `src/t1/devices/assessment.py` | `tests/test_camera_assessment.py` | EXISTING (scores measurements; no decode path to produce them) |
+| S02 | M05 | Discovery policy, fingerprint→driver match, adapter cap, credential vault rules (F06) | `src/t1/devices/discovery.py` | `tests/test_discovery.py` | EXISTING (policy only) |
+| S02 | M05 | Discovery listeners (mDNS, SSDP, ARP/DHCP, BACnet Who-Is) and signed hot-loadable adapter plug-ins (F06 R1–R2) | — | — | MISSING |
+| S02 | M05 | Sealed credential vault backed by TPM/SEC-1 | — | — | MISSING |
+| S02 | M06 | Outbound reachability assessment, TLS-interception and inbound-rule refusal, offline posture, firewall sheet | `src/t1/platform/reachability.py`, `src/t1/bridge/backoff.py` (reconnect only) | `tests/test_reachability.py`, `tests/test_bridge_probe.py` | EXISTING (scores observations; no socket, resolver or TLS client) |
+| S02 | M06 | The probe itself: DNS, TCP 443, TLS with Tangri Service CA pinning, ALPN, proxy client | — | — | MISSING |
 | S03 | M07 | Decode and cascade orchestration (F07) | `src/t1/sim/harness.py` (simulated frames only) | `tests/test_retention_and_sim.py` | MISSING |
 | S03 | M08 | Sealed half: trunk, age gate, redaction (F08, F09) | `src/t1/sealed/pipeline.py`, `src/t1/contracts.py`, `src/t1/sealed/guard.py` | `tests/test_sealed_probe.py`, `tests/test_age_probe.py`, `tests/test_contracts.py` | INCOMPLETE (no model bundle; trunk and redactor are injected) |
 | S03 | M08 | Unsealed half: tracking, dwell | — | — | MISSING |
