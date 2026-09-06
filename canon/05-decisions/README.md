@@ -13,6 +13,7 @@ frozen; a decision is changed by superseding its ADR, never by editing the outco
 | [D-006](0006-sealed-pipeline-redaction-boundary.md) | Where the age head runs relative to redaction | **Resolved** | Introduces the sealed pipeline process; amends frozen principle 5 |
 | [D-007](0007-rtl-l2-som.md) | RTL-L2 is a System-on-Module, not a USB4 accelerator enclosure | **Resolved** | Renames `accelerator_attested` → `module_attested` |
 | [D-008](0008-review-resolutions.md) | Seven smaller SPEC/FEATURES corrections | **Resolved** | C3-on-L1, suppression metric class, k floors, cap composition, clock skew, F10 track, new F21/F22 |
+| [D-009](0009-d009-control-plane-implementation-language.md) | Python is the production control plane; native only where measured | **Resolved** | Answers ADR-REQ-002; process-boundary contracts survive any later rewrite |
 
 ## Open
 
