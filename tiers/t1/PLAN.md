@@ -29,10 +29,12 @@ target hardware.
 2. **M08 is one module but two processes.** D9 gives M08 responsibility for detection, age
    estimation and redaction. D-006 requires those to run inside a sealed process that the rest of
    M08 may not enter. The code already splits them; the architecture text should state the split
-   rather than leaving it to implementers (ADR-REQ-007).
+   rather than leaving it to implementers. D-010 settles it: the sealed pipeline is one of four
+   separately signed units (ADR-REQ-007).
 3. **Egress filter placement.** D9 locates the egress filter in M15 as part of security. D-003
    requires the filter to be separately signed and released so tightening can ship independently of
-   the runtime. That is a packaging constraint D9 does not express (ADR-REQ-007).
+   the runtime. That is a packaging constraint D9 does not express; D-010 makes the egress
+   filter/policy bundle its own unit with its own release lifecycle (ADR-REQ-007).
 4. **Language and runtime.** The repository is pure Python with no dependencies. The target stack
    named in the tier's own material is Yocto Linux, ONNX Runtime, MQTT 5, TLS 1.3, RAUC, SQLite,
    Rust/C++ and Python. Whether the Python control set was the production implementation or the
@@ -58,9 +60,10 @@ still open. Reading SPEC.md before writing the register would have caught this.
 | ADR-REQ-004 | ~~How is L1 identity rooted with no TPM?~~ **Answered by SPEC §4**: identity derives from SSD controller serial + host DMI fingerprint, one certificate, T2 refuses a second enrolment for the disk, fingerprint change → `RE_ENROLMENT_PENDING` with human approval. Open residue: custody of the pre-flight/profile signing key, and how the enrolment key wrapping the LUKS key is protected on a stolen disk (SPEC concedes it is attackable) | Implement SPEC §4 as given | F04, F05 trust level, entitlement | Non-blocking; key custody needed before phase 5 closes |
 | ADR-REQ-005 | Is a virtualised host a refusal or an advisory at pre-flight? | Advisory, reported | F01 outcome on VMs | Non-blocking |
 | ADR-REQ-006 | By what method may pre-flight obtain the internal disk's last-boot evidence without violating AD-01? A read-only mount is still a mount. | Unmeasured is a refusal (`host_dedication_unverified`) | F01 R5 certification | **Blocks F01 bench sign-off** |
-| ADR-REQ-007 | What is the container decomposition, and which units are separately signed and released? | Sealed process, egress filter and bridge are separate units | M04, M08, M12, M14 | **Blocks phase 1 (M04)** |
+| ADR-REQ-007 | ~~What is the container decomposition, and which units are separately signed and released?~~ **Answered by [D-010](../../canon/05-decisions/0010-d010-unit-decomposition-and-release.md)**: four supervised units — sealed pipeline, control plane, egress filter/policy bundle, bridge — each with an explicit process boundary, least-privilege credentials, health supervision, versioned contracts and signature verification before activation | Decided | M04, M08, M12, M14 | Closed |
 | ADR-REQ-008 | Is the D8 GUI navigation the same set as the F22 local control surfaces, or a subset? | Subset of F22 | M17 scope | Non-blocking until phase 10 |
 | ADR-REQ-009 | ~~Is 128 GB the minimum media capacity?~~ **Answered by SPEC §3.1**: Tangri supplies a 256 GB SATA SSD in a USB 3.0 UASP enclosure, so `MIN_T1_MEDIA_MB` is that part's usable capacity. Open residue: the endurance and thermal class that qualifies the part | 256 GB part; class unqualified | M01 bench matrix, BOM | **Blocks M01 media qualification** |
+| ADR-REQ-010 | What is the published `counting_score` threshold, and who may change it? F02 R2 requires a published number; SPEC publishes none, and the number decides which streams carry an accuracy commitment | Working value 0.60, in code rather than in signed policy so it cannot be lowered per site after the contract is written | F02 commissioning outcome, T5 no-refund defensibility | Non-blocking; needed before the first accuracy commitment is signed |
 
 ## 4. Phase plan
 
@@ -72,9 +75,9 @@ strength of host-side evidence where the feature touches hardware.
 |---|---|---|---|---|
 | 0 | — | Architecture carried in-repo; traceability; this plan; ADR-REQ register | — | **Done in this change** for the analysis; ADR-REQs answered is a separate close |
 | 1a | M01 | Pre-flight host and site qualification, signed profile, named remedies, CLI | Phase 0 | **Host-side done in this change.** Media endurance/thermal/power-loss matrix and the dedication probe remain (ADR-REQ-006, 009) |
-| 1b | M02, M03 | Portable-media image, UEFI/Secure Boot chain, A/B slots, read-only rootfs, storage domains per SPEC §3.1/§5 | Phase 1a; unblocked by D-009 | Device boots on two qualified hosts from the portable SSD; internal disk provably untouched; rollback exercised on bench |
-| 1c | M04 | Container runtime, sealed-process supervision enforcing `SealedEnvironment`, capability enforcement at launch | 1b, ADR-REQ-007 | Sealed process refuses to start unsealed; `sealed-probe` runs against the real supervisor, not only the type system |
-| 2 | M06, M05 | Reachability, adapters, discovery, read-only credentials, camera assessment (F02, F06) | 1c | Real cameras enumerated and scored on bench; credentials proven read-only |
+| 1b | M02, M03 | Portable-media image, UEFI/Secure Boot chain, A/B slots, read-only rootfs, storage domains per SPEC §3.1/§5 | Phase 1a; unblocked by D-009 | **Host-side done in this change** (F03 R3–R5: slot state, boot-counter rollback, stage ordering, privacy-set gate, layout invariants). Remaining: the shim/GRUB2/signed-kernel chain (R1–R2), the Yocto image, and bench proof that the device boots on two qualified hosts with the internal disk untouched and rollback exercised |
+| 1c | M04 | Container runtime, sealed-process supervision enforcing `SealedEnvironment`, capability enforcement at launch | 1b; unblocked by D-010 | **Supervision policy done in this change** (four units, start order, per-unit signature and scope refusal, health). Remaining: the runtime that enforces it — namespaces, capabilities, seccomp — and `sealed-probe` run against the real supervisor rather than the type system |
+| 2 | M06, M05 | Reachability, adapters, discovery, read-only credentials, camera assessment (F02, F06) | 1c | **Host-side done in this change** (reachability posture and firewall sheet, TLS-interception and inbound-rule refusal, camera scoring and accuracy commitment, discovery policy, adapter cap, vault credential rules). Remaining: the probe that opens sockets and pins the Tangri Service CA, mDNS/SSDP/ARP listeners, signed adapter plug-ins, the sealed vault, and real cameras enumerated and scored on bench |
 | 3 | M07, M08, M09 | Decode and cascade, model bundle behind the sealed trunk, tracking, aggregation, Edge Manager | 2 | End-to-end counts on real streams; age gate and redaction measured, not simulated; k floors enforced from canon |
 | 4 | M10 | Storage domains, retention enforcement on durable storage, crypto-erase | 1b, ADR-REQ-003 residue | Crypto-erase demonstrated irreversible; retention runs independent of the writer |
 | 5 | M15 | Identity and enrolment per SPEC §4, anti-clone, kill switch; existing filter/policy/audit integrated into the runtime | 4, ADR-REQ-004 residue | A cloned device is refused; kill switch stops ingest within its budget; audit chain covers every control decision |
