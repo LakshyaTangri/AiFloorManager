@@ -32,11 +32,15 @@ per `/tiers/t1/LIFECYCLE.md`, bench and field gates are separate and none of the
 | S02 | M05 | Sealed credential vault backed by TPM/SEC-1 | — | — | MISSING |
 | S02 | M06 | Outbound reachability assessment, TLS-interception and inbound-rule refusal, offline posture, firewall sheet | `src/t1/platform/reachability.py`, `src/t1/bridge/backoff.py` (reconnect only) | `tests/test_reachability.py`, `tests/test_bridge_probe.py` | EXISTING (scores observations; no socket, resolver or TLS client) |
 | S02 | M06 | The probe itself: DNS, TCP 443, TLS with Tangri Service CA pinning, ALPN, proxy client | — | — | MISSING |
-| S03 | M07 | Decode and cascade orchestration (F07) | `src/t1/sim/harness.py` (simulated frames only) | `tests/test_retention_and_sim.py` | MISSING |
-| S03 | M08 | Sealed half: trunk, age gate, redaction (F08, F09) | `src/t1/sealed/pipeline.py`, `src/t1/contracts.py`, `src/t1/sealed/guard.py` | `tests/test_sealed_probe.py`, `tests/test_age_probe.py`, `tests/test_contracts.py` | INCOMPLETE (no model bundle; trunk and redactor are injected) |
-| S03 | M08 | Unsealed half: tracking, dwell | — | — | MISSING |
+| S03 | M07 | Stream admission, stage gating, overload drops, coverage (F07) | `src/t1/pipeline/cascade.py` | `tests/test_cascade.py` | EXISTING (orchestration only; no decoder) |
+| S03 | M07 | The decoder itself: demuxer, keyframe parsing, hardware decode sessions, measured frame budget | — | — | MISSING |
+| S03 | M08 | Sealed half: trunk, age gate, redaction (F08, F09) | `src/t1/sealed/pipeline.py`, `src/t1/contracts.py`, `src/t1/sealed/guard.py` | `tests/test_sealed_probe.py`, `tests/test_age_probe.py`, `tests/test_contracts.py` | INCOMPLETE (trunk and redactor are injected) |
+| S03 | M08 | Model bundle verification, model-card gate, downgrade floor, suppression-shift halt (F09 R3, R4, R6) | `src/t1/sealed/bundle.py` | `tests/test_model_bundle.py` | EXISTING (gates artifacts it does not execute) |
+| S03 | M08 | Model execution: ONNX Runtime / NPU session, weights, measured accuracy | — | — | MISSING |
+| S03 | M08 | Unsealed half: tracking, dwell, C3-at-rest refusal | `src/t1/analytics/tracking.py` | `tests/test_tracking.py` | EXISTING (IoU association, not ByteTrack) |
 | S03 | M09 | k-anonymity suppression (F11) | `src/t1/control/kanon.py` | `tests/test_k_probe.py` | EXISTING |
-| S03 | M09 | Aggregation windows, Edge Manager (F19) | — | — | MISSING |
+| S03 | M09 | Aggregation windows, coverage and time_uncertain carriage (F11, F14 R6) | `src/t1/analytics/aggregation.py` | `tests/test_aggregation.py` | EXISTING (caller-driven; no window scheduler) |
+| S03 | M09 | Edge Manager loop: deviation, closed-vocabulary explanation, signed action library, caps, briefing (F19) | `src/t1/analytics/edge_manager.py` | `tests/test_edge_manager.py` | INCOMPLETE (no baseline learner, no explainer, no outcome step) |
 | S04 | M10 | Zones and consent (F10) | `src/t1/control/zones.py` | `tests/test_retention_and_sim.py` | EXISTING |
 | S04 | M10 | Retention and crypto-erase (F16) | `src/t1/control/retention.py` | `tests/test_retention_and_sim.py` | INCOMPLETE (no crypto-erase; in-memory store) |
 | S04 | M10 | Storage domain layout on the portable device | — | — | MISSING / UNSPECIFIED |
