@@ -54,11 +54,15 @@ per `/tiers/t1/LIFECYCLE.md`, bench and field gates are separate and none of the
 | S05 | M13 | Commissioning gate (F21) | `src/t1/control/commissioning.py` | `tests/test_commissioning_probe.py` | EXISTING |
 | S05 | M13 | Desired/reported state reconciliation (F15) | — | — | MISSING |
 | S05 | M14 | OTA bundles, slot switch, rollback (F15, F03) | — | — | MISSING |
-| S06 | M15 | Identity, enrolment, anti-clone (F04) | — | — | MISSING |
+| S06 | M15 | Identity roots per profile, one-time enrolment, clone refusal and alert, `RE_ENROLMENT_PENDING` on an L1 host change, signed T2 re-enrolment approval (F04) | `src/t1/security/identity.py` | `tests/test_identity.py` | EXISTING (T2 fleet side is an in-process stand-in) |
+| S06 | M15 | Pending re-enrolment halts egress; identity checked before policy (F04 R3) | `src/t1/control/egress_filter.py`, `src/t1/security/identity.py` | `tests/test_identity_integration.py` | EXISTING |
+| S06 | M15 | AWS IoT Fleet Provisioning call, X.509 credential, SEC-1/TPM key generation and attestation | — | — | MISSING |
 | S06 | M15 | Capability vector and gate (F05) | `src/t1/control/capability.py` | `tests/test_class_trust.py` | EXISTING |
 | S06 | M15 | Egress filter and signed policy (F12) | `src/t1/control/egress_filter.py`, `src/t1/control/policy.py` | `tests/test_egress_fuzz.py`, `tests/test_policy_floor.py`, `tests/test_class_trust.py` | EXISTING |
 | S06 | M15 | Audit chain (F13) | `src/t1/control/audit_chain.py` | `tests/test_chain_tamper.py` | EXISTING |
-| S06 | M15 | Kill switch (F17) | — | — | MISSING |
+| S06 | M15 | Kill switch: camera/zone/capability scope, durable state, TA-authorised release, L3 hardware override, audited actor and reason (F17) | `src/t1/security/kill_switch.py` | `tests/test_kill_switch.py` | EXISTING (software only; no DI line, budget unmeasured) |
+| S06 | M15 | Evidence-backed commissioning items: enrolment checked, kill switch exercised (F17, F21) | `src/t1/security/gate_evidence.py` | `tests/test_identity_integration.py` | EXISTING |
+| S06 | M15 | Hardware kill input wiring and the measured ingest-stop budget | — | — | MISSING |
 | S06 | M16 | Budgets and counters (F20) | `src/t1/tools/budget_report.py`, `ops/budgets.json` | `tests/test_retention_and_sim.py` | INCOMPLETE |
 | S06 | M16 | Health reporting, degraded-mode surfacing | — | — | MISSING |
 | S07 | M17 | On-premise GUI and local control surfaces (F22) | — | — | MISSING |

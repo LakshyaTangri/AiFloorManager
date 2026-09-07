@@ -28,6 +28,7 @@ from t1.contracts import Envelope
 from t1.control.audit_chain import AuditChain
 from t1.control.kanon import effective_floor
 from t1.control.policy import PolicyStore
+from t1.security.identity import DeviceIdentity
 
 MAX_ENUM_LEN = 64
 
@@ -89,6 +90,7 @@ def _has_age_field(payload: dict[str, Any]) -> bool:
 class EgressFilter:
     policy: PolicyStore
     chain: AuditChain
+    identity: DeviceIdentity | None = None
     rejections: dict[str, int] = field(default_factory=dict)
     accepted_count: int = 0
 
@@ -113,6 +115,11 @@ class EgressFilter:
         return ACCEPTED
 
     def _checks(self, env: Envelope) -> Verdict:
+        # A device whose host binding changed keeps counting locally but says nothing outward
+        # until a human re-approves it (F04 R3).
+        if self.identity is not None and not self.identity.egress_allowed:
+            return Verdict(False, "identity_not_enrolled")
+
         bundle = self.policy.active
         if bundle is None or not self.policy.bridge_enabled:
             return Verdict(False, self.policy.last_reason or "policy_invalid")
