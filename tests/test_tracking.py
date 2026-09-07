@@ -40,6 +40,18 @@ def test_a_second_person_elsewhere_in_frame_is_a_second_track() -> None:
     assert tracker.started == 2
 
 
+def test_two_overlapping_shoppers_are_two_visits_not_one() -> None:
+    """Both boxes overlap the same open track; one detection may not take a track twice."""
+    tracker = Tracker()
+    tracker.update((_detection(0, (0, 0, 10, 20)),), now_ms=0)
+    tracker.update(
+        (_detection(200, (1, 0, 10, 20)), _detection(200, (2, 0, 10, 20))),
+        now_ms=200,
+    )
+    assert tracker.started == 2
+    assert len(tracker.open_tracks) == 2
+
+
 def test_a_gap_closes_the_track_and_yields_a_dwell() -> None:
     tracker = Tracker()
     tracker.update((_detection(0),), now_ms=0)

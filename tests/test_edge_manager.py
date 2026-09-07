@@ -8,8 +8,10 @@ from t1.analytics.edge_manager import (
     REMEDY,
     Action,
     ActionLibrary,
+    Candidate,
     Cause,
     Deviation,
+    Direction,
     EdgeManager,
     Explanation,
     Factor,
@@ -64,7 +66,7 @@ def _explanation(confidence: float = 0.82) -> Explanation:
 def test_a_persistent_significant_deviation_is_detected() -> None:
     deviation = _deviation()
     assert deviation.sigmas == 4.0
-    assert deviation.direction == "above"
+    assert deviation.direction is Direction.ABOVE
     assert deviation.significant is True
     assert deviation.persistent is True
 
@@ -163,9 +165,50 @@ def test_the_site_cap_holds_across_different_actions() -> None:
 def test_the_cap_resets_with_the_day() -> None:
     manager = _manager()
     manager.recommend(_deviation(), _explanation(), {}, ())
-    manager.new_day("2026-09-06")
+    assert manager.new_day("2026-09-06") is True
     assert isinstance(manager.recommend(_deviation(), _explanation(), {}, ()), Recommendation)
     assert manager.day == "2026-09-06"
+
+
+def test_replaying_the_day_does_not_hand_back_the_days_allowance() -> None:
+    manager = _manager()
+    manager.recommend(_deviation(), _explanation(), {}, ())
+    assert manager.new_day("2026-09-05") is False
+    assert manager.new_day("2026-09-04") is False
+    assert manager.recommend(_deviation(), _explanation(), {}, ()) is Refusal.ACTION_DAILY_CAP
+    assert manager.day == "2026-09-05"
+
+
+def test_an_action_that_raises_footfall_is_not_advised_when_footfall_is_high() -> None:
+    lift = replace(
+        STAFFING, action_id="promote_entrance", metric="footfall", direction=Direction.BELOW
+    )
+    manager = _manager(library=_library((lift,)))
+    high = _deviation(metric="footfall", observed=240.0)
+    assert manager.recommend(high, _explanation(), {}, ()) is Refusal.WRONG_DIRECTION
+
+    low = _deviation(metric="footfall", observed=0.0)
+    assert isinstance(manager.recommend(low, _explanation(), {}, ()), Recommendation)
+
+
+def test_the_days_advice_is_the_highest_ranked_candidates_not_the_earliest() -> None:
+    small = replace(STAFFING, action_id="small", metric="entry_wait", impact_score=0.1)
+    big = replace(STAFFING, action_id="big", metric="dwell_time", impact_score=5.0)
+    mid = replace(STAFFING, action_id="mid", metric="zone_flow", impact_score=2.0)
+    late = replace(STAFFING, action_id="late", metric="footfall", impact_score=9.0)
+    manager = _manager(library=_library((small, big, mid, late)))
+
+    candidates = [
+        Candidate(_deviation(metric=m), _explanation(), {}, ("w1",))
+        for m in ("entry_wait", "dwell_time", "zone_flow", "footfall")
+    ]
+    issued = manager.schedule(candidates)
+
+    assert [r.action_id for r in issued] == ["late", "big", "mid"]
+    assert len(issued) == MAX_RECOMMENDATIONS_PER_SITE_PER_DAY
+    # The withheld candidate is recorded, so outcome analysis can see what was not advised.
+    assert [c.action_id for c in manager.capped] == ["small"]
+    assert manager.refusals[Refusal.RECOMMENDATION_CAPPED] == 1
 
 
 def test_the_briefing_renders_with_t2_unreachable() -> None:

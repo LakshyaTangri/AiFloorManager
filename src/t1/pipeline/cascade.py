@@ -13,7 +13,10 @@ code has no path that decodes a frame and then bypasses the gate or the redactor
 
 Dropping frames costs coverage, and coverage is reported rather than hidden: `data_quality()`
 returns the fraction of offered frames that were actually processed, which is what makes a busy
-Saturday visible as a data-quality note instead of as a quiet undercount.
+Saturday visible as a data-quality note instead of as a quiet undercount. An aggregation window
+asks for `window_quality()` instead, which covers only the frames offered since the last window
+closed — a lifetime ratio would keep the busy hour's drops on the record for the rest of the day
+and mark every recovered window degraded.
 
 This module does not decode. There is no demuxer, no keyframe parser and no scheduler thread; it
 decides what a decoder must do and counts what it did.
@@ -165,11 +168,11 @@ class Cascade:
 
     pipeline: SealedPipeline
     capability: CapabilityVector
-    model_bundle: str
     budget_fps: float = 5.0
     counters: StageCounters = field(default_factory=StageCounters)
     _admitted: set[str] = field(default_factory=set)
-    _recent_ms: list[int] = field(default_factory=list)
+    _recent_ms: dict[str, list[int]] = field(default_factory=dict)
+    _window_base: tuple[int, int] = (0, 0)
 
     @property
     def keyframe_only(self) -> bool:
@@ -201,7 +204,7 @@ class Cascade:
         if self.keyframe_only and not keyframe:
             self.counters.drop(Drop.NON_KEYFRAME)
             return FrameResult(drop=Drop.NON_KEYFRAME)
-        if self._over_budget(frame.ts_ms):
+        if self._over_budget(frame.stream_id, frame.ts_ms):
             # F07 R4: shed the frame whole. The alternative — decoding it and skipping a stage —
             # is the one thing the cascade may never do.
             self.counters.drop(Drop.OVERLOAD)
@@ -227,7 +230,7 @@ class Cascade:
             self.counters.drop(reason)
             return FrameResult(drop=reason)
 
-        self._recent_ms.append(frame.ts_ms)
+        self._recent_ms.setdefault(frame.stream_id, []).append(frame.ts_ms)
         self.counters.processed += 1
         for stage in SEALED_STAGES[1:]:  # S0 was counted above, before the frame was handed over
             self.counters.enter(stage)
@@ -251,8 +254,18 @@ class Cascade:
         return unresolved
 
     def data_quality(self) -> DataQuality:
-        offered = self.counters.offered
-        processed = self.counters.processed
+        """Lifetime coverage, for health reporting."""
+        return self._quality(self.counters.offered, self.counters.processed)
+
+    def window_quality(self) -> DataQuality:
+        """Coverage since the last call, and the boundary an aggregation window carries."""
+        base_offered, base_processed = self._window_base
+        self._window_base = (self.counters.offered, self.counters.processed)
+        return self._quality(
+            self.counters.offered - base_offered, self.counters.processed - base_processed
+        )
+
+    def _quality(self, offered: int, processed: int) -> DataQuality:
         coverage = 1.0 if offered == 0 else round(processed / offered, 3)
         return DataQuality(
             coverage=coverage,
@@ -262,12 +275,19 @@ class Cascade:
         )
 
     def _provenance(self, output: SealedOutput) -> tuple[Provenance, ...]:
+        # F07 R3: the bundle that produced the detection, which is the sealed process's, not
+        # whatever this cascade was configured with.
         return tuple(
-            Provenance(Stage.S1_TRUNK, self.model_bundle, d.confidence) for d in output.detections
+            Provenance(Stage.S1_TRUNK, d.model_bundle, d.confidence) for d in output.detections
         )
 
-    def _over_budget(self, ts_ms: int) -> bool:
-        """One second of processed frames, counted on stream time rather than wall clock."""
+    def _over_budget(self, stream_id: str, ts_ms: int) -> bool:
+        """One second of processed frames, counted per stream on that stream's own clock.
+
+        Streams carry independent timestamp origins, so a shared window would let one camera's
+        future timestamps evict another's and starve the lagging stream of capacity it has.
+        """
         cutoff = ts_ms - 1000
-        self._recent_ms = [t for t in self._recent_ms if t > cutoff]
-        return len(self._recent_ms) >= self.budget_fps
+        recent = [t for t in self._recent_ms.get(stream_id, []) if t > cutoff]
+        self._recent_ms[stream_id] = recent
+        return len(recent) >= self.budget_fps
