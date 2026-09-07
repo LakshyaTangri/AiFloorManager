@@ -51,7 +51,6 @@ def _cascade(
             adapter_cap=3,
             stream_cap=stream_cap,
         ),
-        model_bundle=BUNDLE,
         budget_fps=budget_fps,
     )
 
@@ -138,6 +137,37 @@ def test_budget_recovers_once_the_second_has_passed() -> None:
     assert cascade.offer(Frame("cam-1", 5_000, b"pixels")).processed is True
 
 
+def test_window_quality_recovers_once_the_overloaded_window_has_passed() -> None:
+    cascade = _cascade(budget_fps=2)
+    cascade.admit("cam-1")
+    for i in range(10):
+        cascade.offer(Frame("cam-1", 100 * i, b"pixels"))
+    degraded = cascade.window_quality()
+    assert degraded.degraded is True
+
+    cascade.offer(Frame("cam-1", 60_000, b"pixels"))
+    recovered = cascade.window_quality()
+    assert recovered.frames_offered == 1
+    assert recovered.coverage == 1.0
+    assert recovered.degraded is False
+    # Lifetime coverage still carries the whole day, which is what health reporting wants.
+    assert cascade.data_quality().degraded is True
+
+
+def test_one_streams_budget_does_not_consume_anothers() -> None:
+    cascade = _cascade(budget_fps=2, stream_cap=2)
+    cascade.admit("cam-1")
+    cascade.admit("cam-2")
+    # cam-1 saturates its own second at a timestamp origin far ahead of cam-2's.
+    assert cascade.offer(Frame("cam-1", 900_000, b"pixels")).processed is True
+    assert cascade.offer(Frame("cam-1", 900_010, b"pixels")).processed is True
+    assert cascade.offer(Frame("cam-1", 900_020, b"pixels")).drop is Drop.OVERLOAD
+
+    assert cascade.offer(Frame("cam-2", 0, b"pixels")).processed is True
+    assert cascade.offer(Frame("cam-2", 10, b"pixels")).processed is True
+    assert cascade.offer(Frame("cam-2", 20, b"pixels")).drop is Drop.OVERLOAD
+
+
 def test_redaction_failure_is_a_drop_not_a_passthrough() -> None:
     cascade = _cascade(redaction_fails=True)
     cascade.admit("cam-1")
@@ -160,13 +190,21 @@ def test_a_dead_sealed_process_stops_the_stream_with_no_unsealed_path() -> None:
     assert cascade.counters.processed == 0
 
 
-def test_provenance_carries_bundle_and_confidence() -> None:
+def test_provenance_carries_the_bundle_that_produced_the_detection() -> None:
     cascade = _cascade()
     cascade.admit("cam-1")
     result = cascade.offer(Frame("cam-1", 0, b"pixels"))
     assert [p.as_dict() for p in result.provenance] == [
         {"stage": Stage.S1_TRUNK.value, "model_bundle": BUNDLE, "confidence": 0.9}
     ]
+
+
+def test_provenance_follows_the_sealed_process_not_the_cascades_configuration() -> None:
+    cascade = _cascade()
+    cascade.pipeline.model_bundle = "det-age-trunk-2026.10.0"
+    cascade.admit("cam-1")
+    result = cascade.offer(Frame("cam-1", 0, b"pixels"))
+    assert [p.model_bundle for p in result.provenance] == ["det-age-trunk-2026.10.0"]
 
 
 def test_s3_sees_only_what_s2_left_unresolved() -> None:

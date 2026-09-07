@@ -113,9 +113,17 @@ class Tracker:
     def update(
         self, detections: tuple[BoundaryDetection, ...], now_ms: int
     ) -> tuple[ClosedTrack, ...]:
-        """Associate this frame's detections, then close whatever has aged out."""
+        """Associate this frame's detections, then close whatever has aged out.
+
+        Association is one-to-one against the tracks that existed *before* this frame: two
+        overlapping shoppers standing close enough to share an IoU must become two visits, and a
+        track that has already taken a detection from this frame is no longer a candidate for the
+        next one. Matching against live state instead would merge them and undercount footfall.
+        """
+        candidates = list(self._open.values())
+        taken: set[str] = set()
         for detection in detections:
-            match = self._best_match(detection)
+            match = self._best_match(detection, candidates, taken)
             if match is None:
                 track_id = self._new_id()
                 self._open[track_id] = OpenTrack(
@@ -127,6 +135,7 @@ class Tracker:
                 )
                 self.started += 1
             else:
+                taken.add(match.track_id)
                 match.last_ms = detection.ts_ms
                 match.bbox = detection.bbox
                 match.samples += 1
@@ -161,11 +170,16 @@ class Tracker:
             )
         return tuple(out)
 
-    def _best_match(self, detection: BoundaryDetection) -> OpenTrack | None:
+    def _best_match(
+        self,
+        detection: BoundaryDetection,
+        candidates: list[OpenTrack],
+        taken: set[str],
+    ) -> OpenTrack | None:
         best: OpenTrack | None = None
         best_iou = IOU_MATCH
-        for track in self._open.values():
-            if track.stream_id != detection.stream_id:
+        for track in candidates:
+            if track.track_id in taken or track.stream_id != detection.stream_id:
                 continue
             if detection.ts_ms - track.last_ms > self.max_gap_ms:
                 continue

@@ -7,11 +7,20 @@ previously active bundle stays in force. That is the one refusal that cannot be 
 3 a.m., because the number it demands is the only evidence that the gate was measured near the
 threshold where it actually matters.
 
-Three refusals that are easy to conflate:
+Four refusals that are easy to conflate:
 
-    signature_invalid       bytes do not match the model-bundle signing domain
+    signature_invalid       metadata does not verify in the model-bundle signing domain
+    payload_digest_mismatch the weights are not the bytes the signed metadata names
     model_card_incomplete   the card omits the 16-24 boundary error rate (F09 R6)
     bundle_downgrade        older than the version this device has already run
+
+The first two are separate because a signature over metadata says nothing about the weights: the
+bundle names a digest, so `activate` requires the bytes and hashes them, and substituted weights
+cannot run under a valid bundle identity.
+
+The downgrade floor is written to disk. It is the record of what this device has already run, and a
+floor that resets on restart is not a floor — a reboot would be all it takes to reinstate an age
+gate that was superseded for a measured reason.
 
 Activation is a swap, not a mutation: `ModelStore.activate` either installs the new bundle or
 leaves the old one running. There is no state in which the device has no active bundle because a
@@ -26,6 +35,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from types import MappingProxyType
 from typing import Final
 
@@ -38,6 +48,7 @@ BOUNDARY_BAND: Final[str] = "16_24"
 
 class Refusal(str, Enum):
     SIGNATURE_INVALID = "signature_invalid"
+    PAYLOAD_DIGEST_MISMATCH = "payload_digest_mismatch"
     WRONG_SIGNING_DOMAIN = "wrong_signing_domain"
     MODEL_CARD_INCOMPLETE = "model_card_incomplete"
     BUNDLE_DOWNGRADE = "bundle_downgrade"
@@ -48,6 +59,10 @@ REMEDY: Final[Mapping[Refusal, str]] = MappingProxyType(
         Refusal.SIGNATURE_INVALID: (
             "The bundle does not verify against the model-bundle key. Re-fetch the artifact; "
             "the active bundle keeps running meanwhile"
+        ),
+        Refusal.PAYLOAD_DIGEST_MISMATCH: (
+            "The model bytes do not hash to the digest the signed bundle names. The artifact is "
+            "corrupt or substituted; re-fetch it. The active bundle keeps running meanwhile"
         ),
         Refusal.WRONG_SIGNING_DOMAIN: (
             "The bundle was signed in another domain (policy or release). Model bundles are "
@@ -148,28 +163,47 @@ class ModelStore:
 
     key: bytes
     active: ModelBundle | None = None
-    version_floor: int = 0
+    floor_path: Path | None = None
+    _floor: int = 0
     refusals: dict[Refusal, int] = field(default_factory=dict)
 
-    def verify(self, candidate: ModelBundle, signature: str) -> Refusal | None:
+    def __post_init__(self) -> None:
+        if self.floor_path is not None and self.floor_path.exists():
+            self._floor = max(self._floor, int(self.floor_path.read_text().strip()))
+
+    @property
+    def version_floor(self) -> int:
+        return self._floor
+
+    def verify(
+        self, candidate: ModelBundle, signature: str, contents: bytes | None = None
+    ) -> Refusal | None:
         if candidate.signing_domain != MODEL_SIGNING_DOMAIN:
             return Refusal.WRONG_SIGNING_DOMAIN
         if not hmac.compare_digest(sign(candidate, self.key), signature):
             return Refusal.SIGNATURE_INVALID
+        if contents is not None and digest_of(contents) != candidate.digest:
+            return Refusal.PAYLOAD_DIGEST_MISMATCH
         if not candidate.card.states_boundary_error:
             return Refusal.MODEL_CARD_INCOMPLETE
-        if candidate.version < self.version_floor:
+        if candidate.version < self._floor:
             return Refusal.BUNDLE_DOWNGRADE
         return None
 
-    def activate(self, candidate: ModelBundle, signature: str) -> Refusal | None:
-        """Install, or refuse by name and leave the running bundle exactly where it was."""
-        refusal = self.verify(candidate, signature)
+    def activate(self, candidate: ModelBundle, signature: str, contents: bytes) -> Refusal | None:
+        """Install, or refuse by name and leave the running bundle exactly where it was.
+
+        `contents` is the model payload, not an optional convenience: the signed metadata only
+        names a digest, so nothing verifies the weights themselves unless they are hashed here.
+        """
+        refusal = self.verify(candidate, signature, contents)
         if refusal is not None:
             self.refusals[refusal] = self.refusals.get(refusal, 0) + 1
             return refusal
         self.active = candidate
-        self.version_floor = max(self.version_floor, candidate.version)
+        self._floor = max(self._floor, candidate.version)
+        if self.floor_path is not None:
+            self.floor_path.write_text(str(self._floor))
         return None
 
     def rollout_halts(self, observed_rate: float, baseline: SuppressionBaseline) -> bool:
