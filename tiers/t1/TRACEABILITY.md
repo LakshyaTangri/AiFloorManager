@@ -48,7 +48,14 @@ per `/tiers/t1/LIFECYCLE.md`, bench and field gates are separate and none of the
 | S04 | M10 | Decommission crypto-erase: signed order, chain export, key-slot destruction, bound receipt (F16 R3) | `src/t1/storage/erase.py` | `tests/test_crypto_erase.py` | EXISTING (order and refusals only) |
 | S04 | M10 | LUKS2 key-slot destruction (`cryptsetup luksErase`) and forensic proof of unrecoverability | — | — | MISSING |
 | S04 | M10 | Supervised enforcer: the unit that runs the sweep independently of the application | — | — | MISSING |
-| S05 | M11 | Local P2P sessions (F18) | `src/t1/control/session.py` | `tests/test_session_probe.py` | INCOMPLETE |
+| S05 | M11 | Session certificates verified against the Session CA: domain, signature, device, window (F18 R1) | `src/t1/control/session.py` | `tests/test_session_probe.py` | EXISTING (HMAC stands in for the CA's X.509 signature) |
+| S05 | M11 | L1 does not run the P2P service (F18 R2) | `src/t1/control/session.py` | `tests/test_session_probe.py` | EXISTING (property; no build has been port-scanned) |
+| S05 | M11 | Session open/close chained with user, purpose and duration (F18 R3) | `src/t1/control/session.py` | `tests/test_session_probe.py` | EXISTING |
+| S05 | M11 | Live responses marked `live_onsite` and classed (F18 R4) | `src/t1/control/session.py` | `tests/test_session_probe.py` | EXISTING (label only; nothing stores or deletes them) |
+| S05 | M11 | 72 h full function, then read-only until attestation *and* entitlement refresh (F18 R5, D-005) | `src/t1/control/session.py` | `tests/test_session_probe.py` | EXISTING |
+| S05 | M11 | Renewal offered at 75% of TTL, earlier refused (F18) | `src/t1/control/session.py` | `tests/test_session_probe.py` | EXISTING (timing rule only; the broker signs) |
+| S05 | M11 | mTLS local API serving the cloud OpenAPI paths on the LAN | — | — | MISSING |
+| S05 | M11 | T2 session broker issuance and the real attestation/entitlement exchange | — | — | MISSING |
 | S05 | M12 | Outbound-only bridge (F12, F14) | `src/t1/bridge/mqtt.py` | `tests/test_bridge_probe.py` | INCOMPLETE (no MQTT 5 / TLS transport) |
 | S05 | M12 | Durable spool and ordered backfill (F14) | `src/t1/control/spool.py` | `tests/test_spool_probe.py` | EXISTING |
 | S05 | M13 | Commissioning gate (F21) | `src/t1/control/commissioning.py` | `tests/test_commissioning_probe.py` | EXISTING |
