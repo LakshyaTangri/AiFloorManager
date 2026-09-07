@@ -42,8 +42,12 @@ per `/tiers/t1/LIFECYCLE.md`, bench and field gates are separate and none of the
 | S03 | M09 | Aggregation windows, coverage and time_uncertain carriage (F11, F14 R6) | `src/t1/analytics/aggregation.py` | `tests/test_aggregation.py` | EXISTING (caller-driven; no window scheduler) |
 | S03 | M09 | Edge Manager loop: deviation, closed-vocabulary explanation, signed action library, caps, briefing (F19) | `src/t1/analytics/edge_manager.py` | `tests/test_edge_manager.py` | INCOMPLETE (no baseline learner, no explainer, no outcome step) |
 | S04 | M10 | Zones and consent (F10) | `src/t1/control/zones.py` | `tests/test_retention_and_sim.py` | EXISTING |
-| S04 | M10 | Retention and crypto-erase (F16) | `src/t1/control/retention.py` | `tests/test_retention_and_sim.py` | INCOMPLETE (no crypto-erase; in-memory store) |
-| S04 | M10 | Storage domain layout on the portable device | — | — | MISSING / UNSPECIFIED |
+| S04 | M10 | Retention rules in memory (F16 R1) | `src/t1/control/retention.py` | `tests/test_retention_and_sim.py` | EXISTING |
+| S04 | M10 | Durable retention index and an enforcer that opens it by path, deletion receipts (F16 R1, R2) | `src/t1/storage/durable.py` | `tests/test_durable_retention.py` | EXISTING (SQLite on a host filesystem; nothing schedules the sweep) |
+| S04 | M10 | Storage domain placement: erasable vs preserved, trust level, encryption, AD-01 (F16, C9) | `src/t1/storage/domains.py` | `tests/test_storage_domains.py` | EXISTING |
+| S04 | M10 | Decommission crypto-erase: signed order, chain export, key-slot destruction, bound receipt (F16 R3) | `src/t1/storage/erase.py` | `tests/test_crypto_erase.py` | EXISTING (order and refusals only) |
+| S04 | M10 | LUKS2 key-slot destruction (`cryptsetup luksErase`) and forensic proof of unrecoverability | — | — | MISSING |
+| S04 | M10 | Supervised enforcer: the unit that runs the sweep independently of the application | — | — | MISSING |
 | S05 | M11 | Local P2P sessions (F18) | `src/t1/control/session.py` | `tests/test_session_probe.py` | INCOMPLETE |
 | S05 | M12 | Outbound-only bridge (F12, F14) | `src/t1/bridge/mqtt.py` | `tests/test_bridge_probe.py` | INCOMPLETE (no MQTT 5 / TLS transport) |
 | S05 | M12 | Durable spool and ordered backfill (F14) | `src/t1/control/spool.py` | `tests/test_spool_probe.py` | EXISTING |
